@@ -5,7 +5,9 @@ __pycache__/
 .vscode/
 .DS_Store
 qq_bot_config.json
+qq_bot_config.json.tmp
 prompts.json
-workflows/private/
+workflows/*
+!workflows/zimage-*.json
 *.log
 bot.pid

@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """桥接进程入口。
 
-真正实现在 qq_bridge 包里，这里只负责启动事件循环，保留旧的文件名，
-方便已经配置好的 bat / 快捷方式继续可用：python qq_comfy_bridge.py
+真正实现在 qq_bridge 包里，这里只负责启动事件循环。
+一般由 ComfyUI 的徽标自动拉起，也可以手动运行：python qq_comfy_bridge.py
 """
 
 import asyncio

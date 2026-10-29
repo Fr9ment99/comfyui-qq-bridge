@@ -11,10 +11,8 @@
     ],
     "prompt": [
       {
-        "node": "71",
-        "input": "text_a",
-        "join": "prefix",
-        "separator": "\n"
+        "node": "50",
+        "input": "text"
       }
     ],
     "seed": [
@@ -135,10 +133,7 @@
     },
     "50": {
       "inputs": {
-        "text": [
-          "71",
-          0
-        ],
+        "text": "high quality, detailed",
         "clip": [
           "47",
           0
@@ -156,42 +151,6 @@
       "class_type": "LoadImage",
       "_meta": {
         "title": "加载图像"
-      }
-    },
-    "53": {
-      "inputs": {
-        "text_input": "",
-        "task": "more_detailed_caption",
-        "fill_mask": true,
-        "keep_model_loaded": false,
-        "max_new_tokens": 1024,
-        "num_beams": 3,
-        "do_sample": true,
-        "output_mask_select": "",
-        "seed": 927840988605304,
-        "image": [
-          "51",
-          0
-        ],
-        "florence2_model": [
-          "54",
-          0
-        ]
-      },
-      "class_type": "Florence2Run",
-      "_meta": {
-        "title": "Florence2Run"
-      }
-    },
-    "54": {
-      "inputs": {
-        "model": "Florence-2-base",
-        "precision": "fp16",
-        "convert_to_safetensors": "sdpa"
-      },
-      "class_type": "Florence2ModelLoader",
-      "_meta": {
-        "title": "Florence2ModelLoader"
       }
     },
     "55": {
@@ -217,22 +176,6 @@
       "class_type": "UnetLoaderGGUF",
       "_meta": {
         "title": "Unet Loader (GGUF)"
-      }
-    },
-    "71": {
-      "inputs": {
-        "action": "append",
-        "tidy_tags": "yes",
-        "text_a": "\n",
-        "text_b": [
-          "53",
-          2
-        ],
-        "text_c": ""
-      },
-      "class_type": "StringFunction|pysssss",
-      "_meta": {
-        "title": "String Function 🐍"
       }
     }
   }
