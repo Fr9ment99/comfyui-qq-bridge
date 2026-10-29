@@ -1,0 +1,6 @@
+__pycache__/
+*.py[cod]
+qq_bot_config.json
+prompts.json
+*.log
+bot.pid
