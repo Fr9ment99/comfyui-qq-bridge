@@ -6,6 +6,8 @@
 
 用哪个模型、什么采样器，由你导入的工作流档案决定。
 
+<img src="docs/preview-chat.jpg" alt="手机 QQ 里的菜单与按钮" width="380">
+
 ## 背景
 
 做这个插件的起因很具体：校园网这类受限网络里，手机上直接访问本地部署的 ComfyUI 很不方便。与其把模型搬到云端，不如让 QQ 机器人当中间人——你在手机上发消息，PC 上的本地工作流出图后回传，模型和数据都留在自己机器上。
@@ -37,6 +39,10 @@
 4. 用自己的 QQ 给机器人发一条消息，插件会自动把该账号绑定进白名单。
 
 依赖只有 `aiohttp` 和 `Pillow`，ComfyUI 自带，一般不用额外安装。
+
+徽标展开后长这样（AppID 已打码）：
+
+<img src="docs/badge.png" alt="ComfyUI 右下角的 QQ 机器人徽标" width="320">
 
 ## 示例环境（作者的测试配置）
 
@@ -175,6 +181,7 @@ comfyui-qq-bridge/
 ├─ qq_comfy_bridge.py    桥接进程入口
 ├─ qq_bridge/            桥接实现（config / profiles / workflow / comfy / qq_api / session / menu / bot / app）
 ├─ web/qq_bridge.js      ComfyUI 前端徽标与设置项
+├─ docs/                 README 里的截图
 ├─ workflows/            工作流档案（zimage-*.json 是示例，其余为你导入的档案）
 ├─ qq_bot_config.json    本地配置（含密钥，已被 .gitignore 忽略）
 └─ prompts.json          提示词收藏夹（已被忽略）
