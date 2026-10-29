@@ -48,7 +48,9 @@ function addSetting(id, name, type, field, defaultValue, tooltip) {
     category: CATEGORY,
     defaultValue,
     tooltip,
-    onChange: (value) => queueSave({ [field]: value }),
+    onChange: (value) => {
+      if (type === "boolean" || String(value ?? "").trim()) queueSave({ [field]: value });
+    },
   });
   return true;
 }
@@ -62,6 +64,8 @@ const BADGE_CSS = `
 #qq-bridge-badge .qqb-head{display:flex;align-items:center;gap:7px;cursor:pointer}
 #qq-bridge-badge .qqb-dot{width:8px;height:8px;border-radius:50%;background:#666;flex:none}
 #qq-bridge-badge .qqb-title{font-weight:600}
+#qq-bridge-badge .qqb-title::after{content:" ▾";color:#777;font-weight:400}
+#qq-bridge-badge.expanded .qqb-title::after{content:" ▴"}
 #qq-bridge-badge .qqb-state{color:#9a9a9a;margin-left:auto}
 #qq-bridge-badge button{font:inherit;color:#cfcfcf;background:rgba(255,255,255,.08);
   border:1px solid rgba(255,255,255,.13);border-radius:6px;padding:2px 8px;cursor:pointer}
@@ -115,10 +119,13 @@ function buildBadge() {
         await call("/openids/clear", {});
       } else if (act === "save-config") {
         const host = badge.el.querySelector(".qqb-fallback");
-        await call("/config", {
-          appid: host.querySelector('[data-field="appid"]').value.trim(),
-          appsecret: host.querySelector('[data-field="appsecret"]').value.trim(),
-        });
+        const patch = {};
+        const appid = host.querySelector('[data-field="appid"]').value.trim();
+        const appsecret = host.querySelector('[data-field="appsecret"]').value.trim();
+        if (appid) patch.appid = appid;
+        if (appsecret) patch.appsecret = appsecret;
+        if (!Object.keys(patch).length) return;
+        await call("/config", patch);
       }
       setTimeout(refresh, 600);
     } catch (error) {
@@ -144,7 +151,7 @@ function buildFallbackForm(status) {
   const secret = document.createElement("input");
   secret.dataset.field = "appsecret";
   secret.type = "password";
-  secret.placeholder = "AppSecret";
+  secret.placeholder = "AppSecret（留空则不修改）";
   secret.style.cssText = style;
 
   const save = document.createElement("button");
@@ -153,6 +160,11 @@ function buildFallbackForm(status) {
   save.style.marginTop = "6px";
 
   host.append(appid, secret, save);
+
+  if (!status?.configured) {
+    badge.expanded = true;
+    badge.el.classList.add("expanded");
+  }
 }
 
 function renderStatus(status) {
@@ -233,15 +245,15 @@ app.registerExtension({
   async setup() {
     const status = await call("/status").catch(() => null);
 
-    const hasSettings = addSetting("QQBridge.AppID", "AppID", "text", "appid", status?.appid || "",
+    addSetting("QQBridge.AppID", "AppID", "text", "appid", status?.appid || "",
       "QQ 开放平台机器人 AppID");
-    addSetting("QQBridge.AppSecret", "AppSecret（明文保存）", "text", "appsecret", "",
+    addSetting("QQBridge.AppSecret", "AppSecret", "text", "appsecret", "",
       "QQ 开放平台机器人 AppSecret");
-    addSetting("QQBridge.AutoStart", "随 ComfyUI 自动启动", "boolean", "autostart",
-      status?.autostart ?? true, "关闭后需要手动点右下角徽标里的「启动」");
+    addSetting("QQBridge.AutoStart", "随 ComfyUI 自动启动（密钥在右下角徽标里填）", "boolean", "autostart",
+      status?.autostart ?? true, "点击右下角「QQ 机器人」徽标展开后填写 AppID 和 AppSecret");
 
     buildBadge();
-    if (!hasSettings) buildFallbackForm(status);
+    buildFallbackForm(status);
     if (status) renderStatus(status);
     setInterval(refresh, 3000);
   },
