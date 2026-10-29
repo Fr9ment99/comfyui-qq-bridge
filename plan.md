@@ -412,6 +412,7 @@ SAM3 需要**英文名词性目标**，CLIPTextEncode 需要**完整描述**，�
 - 分隔符为全角「；」，同时兼容半角 `;` 和 `|`。
 - 未写分隔符时：整句同时喂给两边，并在回复里附一行用法提示（覆盖"整体风格修改"这类无需精确分割的场景）。
 - 遮罩目标必须是英文，帮助文案里明确提示。
+- `draw_prompt` 送进工作流前自动追加画质词 `smooth edges, seamless blending, highly detailed, natural lighting, high quality`，用户只写要改成的样子。
 - 待处理图片默认保留 15 分钟，超时需重新发图。
 
 ### 10.7 回复预算与消息时序

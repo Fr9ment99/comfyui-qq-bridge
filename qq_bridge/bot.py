@@ -33,6 +33,7 @@ from .workflow import build_prompt, output_node_of
 INTENTS = (1 << 25) | (1 << 26)  # 单聊消息 + 互动事件
 MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 PENDING_IMAGE_TTL = 900  # 局部重绘第一张图的等待时间（秒）
+INPAINT_DRAW_SUFFIX = "smooth edges, seamless blending, highly detailed, natural lighting, high quality"
 STATUS_APP = "qq-comfy-bridge"
 
 
@@ -281,6 +282,7 @@ class QQBot:
 
     async def run_inpaint(self, openid, reply, image, region, draw, explicit):
         hint = "" if explicit else "提示：用「遮罩目标；重绘内容」可以分别指定分割目标和重绘内容"
+        draw = f"{draw.rstrip(' ,，')}, {INPAINT_DRAW_SUFFIX}" if draw else INPAINT_DRAW_SUFFIX
         await self.enqueue(
             openid, reply, "inpaint",
             {"image": image, "region_prompt": region, "draw_prompt": draw},
