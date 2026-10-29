@@ -23,7 +23,7 @@ from .qq_bridge.config import BASE_DIR, DEFAULTS, load_config, save_config
 from .qq_bridge.errors import ProfileError
 from .qq_bridge.profiles import (
     MODE_LABELS,
-    autodetect,
+    check_workflow,
     delete_profile,
     list_profiles,
     save_profile,
@@ -177,14 +177,6 @@ def _all_profiles():
         return []
 
 
-def _guess_mode(targets):
-    if "region_prompt" in targets:
-        return "inpaint"
-    if "image" in targets:
-        return "img2img"
-    return "txt2img"
-
-
 async def _object_info_issues(profile):
     cfg = load_config()
     url = f"{str(cfg.get('comfyui_url')).rstrip('/')}/object_info"
@@ -265,30 +257,38 @@ async def qq_bridge_profiles_import(request):
     except json.JSONDecodeError:
         return web.json_response({"ok": False, "error": "请求体不是合法 JSON"}, status=400)
 
+    mode = str(data.get("mode") or "")
+    if mode not in MODE_LABELS:
+        return web.json_response(
+            {"ok": False, "error": "缺少 mode，必须是 txt2img / img2img / inpaint"}, status=400
+        )
+
     workflow = data.get("workflow")
     if not isinstance(workflow, dict) or not workflow:
         return web.json_response(
-            {"ok": False, "error": "缺少 workflow，请先在 ComfyUI 里打开要导入的工作流"},
-            status=400,
+            {"ok": False, "error": "缺少 workflow，请选择 ComfyUI 导出的 API 格式 JSON"}, status=400
         )
 
-    warnings = []
-    profile = {"workflow": workflow}
-    for key in ("id", "label", "mode", "targets", "output", "timeout", "defaults"):
-        if data.get(key) not in (None, "", {}, []):
-            profile[key] = data[key]
+    issues, detected = check_workflow(mode, workflow)
+    if issues:
+        return web.json_response({
+            "ok": False,
+            "error": "节点检查未通过：\n" + "\n".join(f"· {item}" for item in issues),
+            "issues": issues,
+        }, status=400)
 
-    if not isinstance(profile.get("targets"), dict) or not profile["targets"]:
-        detected = autodetect(workflow)
-        profile["targets"] = detected["targets"]
-        profile.setdefault("mode", detected["mode"])
-        profile["output"] = profile.get("output") or detected["output"]
-        warnings.extend(detected["warnings"])
+    profile = {
+        "id": str(data.get("id") or "").strip() or time.strftime(f"{mode}-%Y%m%d-%H%M%S"),
+        "label": str(data.get("label") or "").strip() or f"{MODE_LABELS[mode]}工作流",
+        "mode": mode,
+        "targets": detected["targets"],
+        "output": detected["output"],
+        "workflow": workflow,
+    }
+    if detected["defaults"]:
+        profile["defaults"] = detected["defaults"]
 
-    profile.setdefault("mode", _guess_mode(profile["targets"]))
-    profile.setdefault("label", f"{MODE_LABELS.get(profile['mode'], profile['mode'])}画布")
-    profile.setdefault("id", time.strftime("canvas-%Y%m%d-%H%M%S"))
-
+    warnings = list(detected["warnings"])
     warnings.extend(await _object_info_issues(profile))
 
     try:

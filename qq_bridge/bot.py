@@ -452,7 +452,7 @@ class QQBot:
         if not profiles:
             await self.reply_text(
                 openid, reply,
-                "还没有工作流档案。请在 ComfyUI 右下角徽标里点「导入当前画布」。",
+                "还没有工作流档案。请在 ComfyUI 右下角徽标里导入 API 格式的工作流文件。",
             )
             return
         active = self.cfg.get("active_profiles") or {}

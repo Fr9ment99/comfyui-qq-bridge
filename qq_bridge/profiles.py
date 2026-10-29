@@ -139,7 +139,7 @@ def resolve_active(mode, cfg):
     if not candidates:
         raise ProfileError(
             f"还没有为「{MODE_LABELS.get(mode, mode)}」配置工作流档案。"
-            f"请在 ComfyUI 右下角徽标里导入当前画布，或把 API 工作流放到 workflows/ 目录。"
+            f"请在 ComfyUI 右下角徽标里导入对应模式的 API 工作流文件，或把档案放到 workflows/ 目录。"
         )
     ids = "、".join(p["id"] for p in candidates)
     raise ProfileError(
@@ -353,7 +353,8 @@ def autodetect(workflow):
     if seeds:
         targets["seed"] = seeds
 
-    # 尺寸
+    # 尺寸：顺便记住工作流自己的宽高，导入档案时作为默认值
+    defaults = {}
     for node_id, node in workflow.items():
         cls = str(node.get("class_type") or "")
         if cls.startswith("Empty") and "Latent" in cls:
@@ -361,6 +362,7 @@ def autodetect(workflow):
             if isinstance(inputs.get("width"), (int, float)) and isinstance(inputs.get("height"), (int, float)):
                 targets["width"] = [{"node": node_id, "input": "width"}]
                 targets["height"] = [{"node": node_id, "input": "height"}]
+                defaults = {"width": int(inputs["width"]), "height": int(inputs["height"])}
                 break
 
     # 强度（采样器的 denoise）
@@ -393,4 +395,62 @@ def autodetect(workflow):
     if "width" not in targets and mode == "txt2img":
         warnings.append("没有找到空 latent 节点，文生图无法自动改尺寸")
 
-    return {"mode": mode, "targets": targets, "output": output, "warnings": warnings}
+    return {
+        "mode": mode, "targets": targets, "output": output,
+        "defaults": defaults, "warnings": warnings,
+    }
+
+
+def _has_caption_source(workflow, targets):
+    """图生图需要有一个把图片转成文字的节点（Florence2 / JoyCaption 之类）。"""
+    keywords = ("florence", "caption", "blip", "wd14", "janus")
+    for node in workflow.values():
+        cls = str(node.get("class_type") or "").lower()
+        if any(word in cls for word in keywords):
+            return True
+    # 提示词的字面量输入被别的节点连线喂入，也说明文本来自某个输出节点
+    for item in targets.get("prompt") or []:
+        node = workflow.get(str(item.get("node"))) or {}
+        for value in (node.get("inputs") or {}).values():
+            if isinstance(value, list) and len(value) == 2 and str(value[0]) in workflow:
+                return True
+    return False
+
+
+def check_workflow(mode, workflow):
+    """导入前的节点体检，返回 (问题列表, 自动识别结果)。问题为空表示可以存成档案。"""
+    detected = autodetect(workflow)
+    targets = detected["targets"]
+    issues = []
+
+    if not targets.get("seed"):
+        issues.append("没有找到采样器（KSampler）的 seed")
+
+    if mode == "txt2img":
+        if not targets.get("prompt"):
+            issues.append("没有找到文本输入节点：需要一个能直接写字的 CLIPTextEncode")
+        if not detected["output"]:
+            issues.append("没有找到图片输出节点：需要一个 SaveImage")
+    elif mode == "img2img":
+        if not targets.get("image"):
+            issues.append("没有找到图片输入节点：需要一个 LoadImage")
+        if not _has_caption_source(workflow, targets):
+            issues.append("没有找到文本输出节点：需要一个反推节点（如 Florence2Run）")
+        if not detected["output"]:
+            issues.append("没有找到图片输出节点：需要一个 SaveImage")
+    elif mode == "inpaint":
+        if not targets.get("image"):
+            issues.append("没有找到图片输入节点：需要一个 LoadImage")
+        if not targets.get("region_prompt"):
+            issues.append("没有找到遮罩文本节点：需要一个带文字输入的 SAM3 分割节点")
+        if not targets.get("draw_prompt"):
+            issues.append("没有找到重绘描述节点：需要一个新的 CLIPTextEncode")
+        if not detected["output"]:
+            issues.append("没有找到图片输出节点：需要一个 SaveImage")
+
+    if not issues and detected["mode"] != mode:
+        issues.append(
+            f"这个文件看起来是「{MODE_LABELS.get(detected['mode'], detected['mode'])}」工作流，"
+            f"请用对应的导入按钮"
+        )
+    return issues, detected

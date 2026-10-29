@@ -36,7 +36,18 @@
 
 ### 导入方式
 
-- **导入当前画布**：在 ComfyUI 里打开工作流，点徽标 →「导入当前画布」。插件会用 `graphToPrompt()` 导出 API 格式，自动猜出模式和映射，存成档案。猜得不对就手改 JSON。
+徽标里有三个导入按钮，分别对应文生图 / 图生图 / 局部重绘。点按钮后选择 ComfyUI 用「另存为 API 格式」导出的 JSON（不是 UI 格式的 `.json`）。
+
+导入时会先做一次节点体检，不通过就不保存：
+
+| 模式 | 必须找到的节点 |
+| --- | --- |
+| 文生图 | 可写入文字的 CLIPTextEncode、SaveImage |
+| 图生图 | LoadImage、反推节点（Florence2 等，输出文字）、SaveImage |
+| 局部重绘 | LoadImage、带文字输入的 SAM3 分割节点、CLIPTextEncode（重绘描述）、SaveImage |
+
+三种模式都还要求工作流里有 KSampler 的 seed；文件看起来属于别的模式时会提示你换按钮。
+
 - **手工放入**：把 API 工作流按下面的格式写成 `workflows/你的档案.json`。
 - **切换**：徽标里点档案名即可启用；手机上也可以发 `/profiles` 看列表、`/use 档案id` 启用。
 

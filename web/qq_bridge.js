@@ -27,17 +27,42 @@ async function call(path, body) {
   return data;
 }
 
-async function importCanvas() {
-  if (typeof app.graphToPrompt !== "function") {
-    throw new Error("当前前端界面不支持导出 API 工作流");
+const IMPORT_MODES = [
+  ["txt2img", "导入文生图"],
+  ["img2img", "导入图生图"],
+  ["inpaint", "导入局部重绘"],
+];
+
+function pickWorkflowFile() {
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json,application/json";
+    input.style.display = "none";
+    input.addEventListener("change", () => {
+      const file = input.files?.[0] || null;
+      input.remove();
+      resolve(file);
+    });
+    document.body.appendChild(input);
+    input.click();
+  });
+}
+
+async function importWorkflowFile(mode) {
+  const file = await pickWorkflowFile();
+  if (!file) return;
+
+  let workflow = null;
+  try {
+    workflow = JSON.parse(await file.text());
+  } catch (error) {
+    window.alert(`${file.name} 不是合法的 JSON 文件`);
+    return;
   }
-  const { output } = await app.graphToPrompt();
-  const label = window.prompt(
-    "给这个工作流起个名字（模式会自动识别）",
-    `${new Date().toLocaleString()} 画布`
-  );
-  if (!label) return;
-  const result = await call("/profiles/import", { workflow: output, label: label.trim() });
+
+  const label = file.name.replace(/\.json$/i, "");
+  const result = await call("/profiles/import", { workflow, mode, label });
   const notes = [];
   if (result.activated) notes.push("已自动设为该模式的当前档案");
   if (result.warnings?.length) notes.push(...result.warnings);
@@ -140,7 +165,11 @@ function buildBadge() {
       if (act === "restart") {
         await call("/restart", {});
       } else if (act === "import") {
-        await importCanvas();
+        try {
+          await importWorkflowFile(event.target.dataset.mode);
+        } catch (error) {
+          window.alert(`导入失败：${error.message}`);
+        }
         return;
       } else if (act === "toggle") {
         const alive = badge.status?.health || badge.status?.managed;
@@ -212,7 +241,7 @@ function renderProfiles(status) {
 
   if (!profiles.length) {
     const tip = document.createElement("div");
-    tip.textContent = "还没有档案。先打开一个工作流，再点下面的「导入当前画布」。";
+    tip.textContent = "还没有档案。点下面的按钮导入 ComfyUI「另存为 API 格式」导出的 JSON。";
     detail.appendChild(tip);
   }
 
@@ -297,16 +326,20 @@ function renderStatus(status) {
 
   const actions = document.createElement("div");
   actions.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;margin-top:8px";
-  const importButton = document.createElement("button");
-  importButton.textContent = "导入当前画布";
-  importButton.dataset.act = "import";
+  const importButtons = IMPORT_MODES.map(([mode, label]) => {
+    const button = document.createElement("button");
+    button.textContent = label;
+    button.dataset.act = "import";
+    button.dataset.mode = mode;
+    return button;
+  });
   const restart = document.createElement("button");
   restart.textContent = "重启";
   restart.dataset.act = "restart";
   const toggle = document.createElement("button");
   toggle.textContent = alive ? "停止" : "启动";
   toggle.dataset.act = "toggle";
-  actions.append(importButton, restart, toggle);
+  actions.append(...importButtons, restart, toggle);
   detail.appendChild(actions);
 }
 
