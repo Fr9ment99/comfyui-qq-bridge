@@ -204,8 +204,7 @@ function buildFallbackForm(status) {
 
   const appid = document.createElement("input");
   appid.dataset.field = "appid";
-  appid.placeholder = "AppID";
-  appid.value = status?.appid || "";
+  appid.placeholder = "AppID（留空则不修改）";
   appid.style.cssText = style;
 
   const secret = document.createElement("input");
@@ -360,7 +359,7 @@ app.registerExtension({
   async setup() {
     const status = await call("/status").catch(() => null);
 
-    addSetting("QQBridge.AppID", "AppID", "text", "appid", status?.appid || "",
+    addSetting("QQBridge.AppID", "AppID", "text", "appid", "",
       "QQ 开放平台机器人 AppID");
     addSetting("QQBridge.AppSecret", "AppSecret", "text", "appsecret", "",
       "QQ 开放平台机器人 AppSecret");

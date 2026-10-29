@@ -38,7 +38,7 @@ def keyboard_payload():
                 "data": data,
                 "enter": True,
                 "reply": False,
-                "unsupported_tips": {"tips": "请升级到最新版手机 QQ"},
+                "unsupport_tips": "请升级到最新版手机 QQ",
             },
         })
     return {"content": {"rows": [{"buttons": buttons}]}}

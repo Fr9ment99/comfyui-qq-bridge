@@ -111,7 +111,7 @@ class QQClient:
 
         if event_id:
             payload["event_id"] = event_id
-        elif msg_id:
+        else:
             payload["msg_id"] = msg_id
             payload["msg_seq"] = self.next_seq(msg_id)
 
