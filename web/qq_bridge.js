@@ -40,7 +40,7 @@ function queueSave(patch) {
 
 function addSetting(id, name, type, field, defaultValue, tooltip) {
   const settings = app.ui?.settings;
-  if (!settings?.addSetting) return;
+  if (!settings?.addSetting) return false;
   settings.addSetting({
     id,
     name,
@@ -50,6 +50,7 @@ function addSetting(id, name, type, field, defaultValue, tooltip) {
     tooltip,
     onChange: (value) => queueSave({ [field]: value }),
   });
+  return true;
 }
 
 const BADGE_CSS = `
@@ -86,7 +87,10 @@ function buildBadge() {
       <span class="qqb-title">QQ 机器人</span>
       <span class="qqb-state">检测中</span>
     </div>
-    <div class="qqb-detail"></div>
+    <div class="qqb-detail">
+      <div class="qqb-info"></div>
+      <div class="qqb-fallback"></div>
+    </div>
   `;
   document.body.appendChild(el);
   badge.el = el;
@@ -109,12 +113,46 @@ function buildBadge() {
       } else if (act === "clear") {
         if (!window.confirm("清空 OpenID 白名单？下一次对话会重新绑定第一个用户。")) return;
         await call("/openids/clear", {});
+      } else if (act === "save-config") {
+        const host = badge.el.querySelector(".qqb-fallback");
+        await call("/config", {
+          appid: host.querySelector('[data-field="appid"]').value.trim(),
+          appsecret: host.querySelector('[data-field="appsecret"]').value.trim(),
+        });
       }
       setTimeout(refresh, 600);
     } catch (error) {
       console.error("[QQBot] 操作失败", error);
     }
   });
+}
+
+function buildFallbackForm(status) {
+  const host = badge.el?.querySelector(".qqb-fallback");
+  if (!host || host.dataset.ready) return;
+  host.dataset.ready = "1";
+
+  const style = "width:100%;box-sizing:border-box;margin-top:5px;padding:4px 6px;background:rgba(255,255,255,.06);"
+    + "color:#ddd;border:1px solid rgba(255,255,255,.15);border-radius:5px;font:inherit";
+
+  const appid = document.createElement("input");
+  appid.dataset.field = "appid";
+  appid.placeholder = "AppID";
+  appid.value = status?.appid || "";
+  appid.style.cssText = style;
+
+  const secret = document.createElement("input");
+  secret.dataset.field = "appsecret";
+  secret.type = "password";
+  secret.placeholder = "AppSecret";
+  secret.style.cssText = style;
+
+  const save = document.createElement("button");
+  save.dataset.act = "save-config";
+  save.textContent = "保存并重启";
+  save.style.marginTop = "6px";
+
+  host.append(appid, secret, save);
 }
 
 function renderStatus(status) {
@@ -124,7 +162,7 @@ function renderStatus(status) {
   const health = status.health;
   const dot = badge.el.querySelector(".qqb-dot");
   const stateText = badge.el.querySelector(".qqb-state");
-  const detail = badge.el.querySelector(".qqb-detail");
+  const detail = badge.el.querySelector(".qqb-info");
 
   let color = "#666";
   let text = "未运行";
@@ -195,12 +233,15 @@ app.registerExtension({
   async setup() {
     const status = await call("/status").catch(() => null);
 
-    addSetting("QQBridge.AppID", "AppID", "text", "appid", status?.appid || "", "QQ 开放平台机器人 AppID");
-    addSetting("QQBridge.AppSecret", "AppSecret（明文保存）", "text", "appsecret", "", "QQ 开放平台机器人 AppSecret");
-    addSetting("QQBridge.AutoStart", "随 ComfyUI 自动启动", "boolean", "autostart", status?.autostart ?? true,
-      "关闭后需要手动点右下角徽标里的「启动」");
+    const hasSettings = addSetting("QQBridge.AppID", "AppID", "text", "appid", status?.appid || "",
+      "QQ 开放平台机器人 AppID");
+    addSetting("QQBridge.AppSecret", "AppSecret（明文保存）", "text", "appsecret", "",
+      "QQ 开放平台机器人 AppSecret");
+    addSetting("QQBridge.AutoStart", "随 ComfyUI 自动启动", "boolean", "autostart",
+      status?.autostart ?? true, "关闭后需要手动点右下角徽标里的「启动」");
 
     buildBadge();
+    if (!hasSettings) buildFallbackForm(status);
     if (status) renderStatus(status);
     setInterval(refresh, 3000);
   },
