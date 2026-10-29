@@ -42,7 +42,7 @@
 
 仓库附带的三份示例档案就是在下面这套环境里跑通的，仅供参考，不是插件的硬性要求。
 
-测试机：Windows + 秋叶整合包（ComfyUI-aki-v3.2）。
+测试机：Windows 笔记本（i7-13700H + RTX 4060 Laptop 8GB 显存 + 16GB DDR5），秋叶整合包（ComfyUI-aki-v3.2），启动器里选 `CUDA GPU 0`、「标准优化（4GB 以上）」。
 
 模型文件：
 
