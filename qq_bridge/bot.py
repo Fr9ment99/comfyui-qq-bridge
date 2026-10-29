@@ -92,6 +92,7 @@ class QQBot:
         self.started_at = time.time()
         self.last_error = ""
         self.last_image_at = 0
+        self.greeted = False
 
     # ------------------------------------------------------------------
     # 状态
@@ -147,29 +148,54 @@ class QQBot:
         log(f"未绑定用户尝试访问：{openid[:8]}…，已忽略", "WARN")
         return False
 
-    async def reply_text(self, openid, reply, text):
-        await self.qq.send_text(openid, text, msg_id=reply.msg_id, event_id=reply.event_id)
+    async def reply_text(self, openid, reply=None, text=""):
+        await self.qq.send_text(
+            openid, text,
+            msg_id=reply.msg_id if reply else None,
+            event_id=reply.event_id if reply else None,
+        )
 
-    async def send_menu(self, openid, reply, hint=""):
+    async def send_menu(self, openid, reply=None, hint=""):
         active_line = self.active_summary()
+        msg_id = reply.msg_id if reply else None
+        event_id = reply.event_id if reply else None
         if self.cfg.get("keyboard_ok", True):
             try:
                 await self.qq.send_menu(
                     openid,
                     menu.markdown_menu(hint, active_line),
                     menu.keyboard_payload(),
-                    msg_id=reply.msg_id,
-                    event_id=reply.event_id,
+                    msg_id=msg_id,
+                    event_id=event_id,
                 )
                 return
             except QQAPIError as exc:
                 log(f"按钮菜单发送失败，降级为文字菜单：{exc}", "WARN")
-                self.cfg["keyboard_ok"] = False
-                try:
-                    save_config(self.cfg)
-                except Exception:
-                    pass
+                if reply is not None:
+                    self.cfg["keyboard_ok"] = False
+                    try:
+                        save_config(self.cfg)
+                    except Exception:
+                        pass
         await self.reply_text(openid, reply, menu.text_menu(hint, active_line))
+
+    async def greet(self):
+        """上线后给已绑定账号推一次菜单。属于主动消息，每月额度有限，只发一次。"""
+        if self.greeted:
+            return
+        self.greeted = True
+        targets = list(self.cfg.get("openids") or [])
+        if not targets:
+            log("还没有绑定账号，等收到第一条消息后再发菜单")
+            return
+
+        hint = "机器人已上线。选择一个模式，或直接发送文字 / 图片。"
+        for openid in targets:
+            try:
+                await self.send_menu(openid, hint=hint)
+                log(f"已发送上线菜单：{openid[:8]}…")
+            except QQAPIError as exc:
+                log(f"上线菜单发送失败，可能超出主动消息额度（每月 4 条）：{exc}", "WARN")
 
     async def on_message(self, data):
         msg_id = data.get("id")
@@ -737,6 +763,7 @@ class QQBot:
                 self.last_error = ""
                 user = data.get("user") or {}
                 log(f"机器人已上线：{user.get('username', '未知')} session={self.session_id}")
+                asyncio.create_task(self.greet())
             elif event == "C2C_MESSAGE_CREATE":
                 asyncio.create_task(self.on_message(data))
             elif event == "INTERACTION_CREATE":
