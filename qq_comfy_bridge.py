@@ -17,6 +17,7 @@ import base64
 import collections
 import io
 import json
+import os
 import random
 import sys
 import time
@@ -24,6 +25,7 @@ import traceback
 from pathlib import Path
 
 import aiohttp
+from aiohttp import web
 
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = BASE_DIR / "qq_bot_config.json"
@@ -47,6 +49,11 @@ INTENTS_C2C = 1 << 25     # 群与单聊事件
 MAX_IMAGE_BYTES = 3_500_000  # base64 后会膨胀约 1/3，控制在 5MB 以内
 QUEUE_LIMIT = 3
 MAX_REPLY_PER_MSG = 4     # 同一 msg_id 最多回复次数
+
+# ===== 本地状态服务 =====
+STATUS_HOST = "127.0.0.1"
+STATUS_PORT = 8189        # 同时充当单实例锁
+STATUS_APP = "qq-comfy-bridge"
 
 
 def log(msg, level="INFO"):
@@ -265,6 +272,23 @@ class QQBot:
         self.session_id = None
         self.current_job = None
         self.started_at = time.time()
+        self.connected = False
+        self.last_error = ""
+        self.last_image_at = 0
+
+    def stats(self):
+        return {
+            "app": STATUS_APP,
+            "pid": os.getpid(),
+            "connected": self.connected,
+            "uptime": int(time.time() - self.started_at),
+            "queue": self.queue.qsize(),
+            "queue_limit": QUEUE_LIMIT,
+            "generating": bool(self.current_job),
+            "prompt": (self.current_job or {}).get("prompt", "")[:120],
+            "last_error": self.last_error,
+            "last_image_at": int(self.last_image_at) or None,
+        }
 
     # ---------- QQ HTTP API ----------
     async def api(self, method, path, **kwargs):
@@ -492,6 +516,7 @@ class QQBot:
             file_info = await self.upload_image(openid, image)
             caption = f"完成（{time.time() - t0:.0f}s，seed {seed}）"
             await self.send_image(openid, file_info, msg_id, caption)
+            self.last_image_at = time.time()
             log("图片已发送")
         except QQAPIError as e:
             log(f"发送图片失败：{e}", "ERROR")
@@ -509,6 +534,7 @@ class QQBot:
                 raise
             except Exception as e:
                 fail += 1
+                self.last_error = str(e)
                 log(f"连接断开：{e!r}", "ERROR")
             delay = min(30, 3 * max(fail, 1))
             log(f"{delay} 秒后重连…")
@@ -551,6 +577,7 @@ class QQBot:
                         log(f"连接关闭：{ws.close_code}", "WARN")
                         break
             finally:
+                self.connected = False
                 hb.cancel()
 
     async def heartbeat(self, ws, interval):
@@ -572,6 +599,8 @@ class QQBot:
             d = payload.get("d") or {}
             if t == "READY":
                 self.session_id = d.get("session_id")
+                self.connected = True
+                self.last_error = ""
                 user = d.get("user") or {}
                 log(f"机器人已上线：{user.get('username', '未知')} session={self.session_id}")
             elif t == "C2C_MESSAGE_CREATE":
@@ -584,6 +613,31 @@ class QQBot:
         elif op == 11:
             pass
         return False
+
+
+async def serve_status(bot):
+    """本地状态服务：给插件面板查状态，同时用端口占用充当单实例锁。"""
+
+    async def health(request):
+        return web.json_response(bot.stats())
+
+    app = web.Application()
+    app.router.add_get("/health", health)
+    runner = web.AppRunner(app, access_log=None)
+    await runner.setup()
+    await web.TCPSite(runner, STATUS_HOST, STATUS_PORT).start()
+    log(f"状态服务：http://{STATUS_HOST}:{STATUS_PORT}/health")
+    return runner
+
+
+async def already_running(session):
+    try:
+        async with session.get(f"http://{STATUS_HOST}:{STATUS_PORT}/health",
+                               timeout=aiohttp.ClientTimeout(total=2)) as r:
+            data = await r.json(content_type=None)
+    except Exception:
+        return False
+    return data.get("app") == STATUS_APP
 
 
 async def main():
@@ -600,7 +654,7 @@ async def main():
     secret = (cfg.get("appsecret") or "").strip()
     if not appid or not secret:
         log("未配置 AppID / AppSecret，请在面板中填写并保存。", "ERROR")
-        return
+        raise SystemExit(2)
 
     if not WORKFLOW_FILE.exists():
         log(f"找不到工作流文件：{WORKFLOW_FILE}", "ERROR")
@@ -608,6 +662,10 @@ async def main():
 
     log("QQ Bot 服务启动中…")
     async with aiohttp.ClientSession(trust_env=False) as session:
+        if await already_running(session):
+            log(f"已有实例在 {STATUS_HOST}:{STATUS_PORT} 运行，本次退出。", "ERROR")
+            return
+
         try:
             await comfy_health(session)
             log("ComfyUI 连接正常")
@@ -616,9 +674,18 @@ async def main():
 
         bot = QQBot(session, cfg)
         try:
+            runner = await serve_status(bot)
+        except OSError as e:
+            log(f"状态端口 {STATUS_PORT} 不可用（{e}），继续运行但无法提供状态", "WARN")
+            runner = None
+
+        try:
             await bot.run()
         except asyncio.CancelledError:
             pass
+        finally:
+            if runner:
+                await runner.cleanup()
 
 
 if __name__ == "__main__":
