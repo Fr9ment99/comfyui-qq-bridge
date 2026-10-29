@@ -109,7 +109,7 @@ function addSetting(id, name, type, field, defaultValue, tooltip) {
 }
 
 const BADGE_CSS = `
-#qq-bridge-badge{position:fixed;right:14px;bottom:14px;z-index:10000;
+#qq-bridge-badge{position:fixed;right:14px;bottom:72px;z-index:10000;
   font:12px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;color:#dcdcdc;
   background:rgba(22,22,26,.94);border:1px solid rgba(255,255,255,.13);
   border-radius:10px;padding:8px 11px;box-shadow:0 6px 22px rgba(0,0,0,.38);
