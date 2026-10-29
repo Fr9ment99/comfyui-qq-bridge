@@ -2,6 +2,7 @@ import { app } from "../../scripts/app.js";
 
 const API = "/qq_bridge";
 const CATEGORY = ["QQ 机器人"];
+const MODE_NAMES = { txt2img: "文生图", img2img: "图生图", inpaint: "局部重绘" };
 
 const badge = {
   el: null,
@@ -16,8 +17,35 @@ async function call(path, body) {
     body: JSON.stringify(body),
   };
   const response = await fetch(API + path, options);
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
+  let data = null;
+  try {
+    data = await response.json();
+  } catch (error) {
+    data = null;
+  }
+  if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`);
+  return data;
+}
+
+async function importCanvas() {
+  if (typeof app.graphToPrompt !== "function") {
+    throw new Error("当前前端界面不支持导出 API 工作流");
+  }
+  const { output } = await app.graphToPrompt();
+  const label = window.prompt(
+    "给这个工作流起个名字（模式会自动识别）",
+    `${new Date().toLocaleString()} 画布`
+  );
+  if (!label) return;
+  const result = await call("/profiles/import", { workflow: output, label: label.trim() });
+  const notes = [];
+  if (result.activated) notes.push("已自动设为该模式的当前档案");
+  if (result.warnings?.length) notes.push(...result.warnings);
+  window.alert(
+    `已保存档案 ${result.id}（${MODE_NAMES[result.mode] || result.mode}）`
+    + (notes.length ? `\n\n${notes.join("\n")}` : "")
+  );
+  await refresh();
 }
 
 const pendingPatch = {};
@@ -111,6 +139,9 @@ function buildBadge() {
     try {
       if (act === "restart") {
         await call("/restart", {});
+      } else if (act === "import") {
+        await importCanvas();
+        return;
       } else if (act === "toggle") {
         const alive = badge.status?.health || badge.status?.managed;
         await call(alive ? "/stop" : "/start", {});
@@ -167,6 +198,52 @@ function buildFallbackForm(status) {
   }
 }
 
+function renderProfiles(status) {
+  const detail = badge.el?.querySelector(".qqb-info");
+  if (!detail) return;
+
+  const profiles = status.profiles || [];
+  const active = status.active_profiles || {};
+
+  const title = document.createElement("div");
+  title.style.cssText = "margin-top:8px;color:#dcdcdc";
+  title.textContent = `工作流档案（${profiles.length}）`;
+  detail.appendChild(title);
+
+  if (!profiles.length) {
+    const tip = document.createElement("div");
+    tip.textContent = "还没有档案。先打开一个工作流，再点下面的「导入当前画布」。";
+    detail.appendChild(tip);
+  }
+
+  for (const profile of profiles) {
+    const row = document.createElement("div");
+    const current = active[profile.mode] === profile.id;
+    const mode = MODE_NAMES[profile.mode] || profile.mode;
+    row.textContent = `${profile.valid ? (current ? "●" : "○") : "✗"} ${mode} · ${profile.id}`;
+    row.style.cssText = "margin-top:3px;white-space:normal;overflow-wrap:anywhere";
+    if (!profile.valid) {
+      row.style.color = "#e0776b";
+      row.title = profile.error;
+    } else if (current) {
+      row.style.color = "#3ecf8e";
+    } else {
+      row.style.cursor = "pointer";
+      row.title = "点击设为该模式的当前档案";
+      row.addEventListener("click", async (event) => {
+        event.stopPropagation();
+        try {
+          await call("/profiles/active", { mode: profile.mode, id: profile.id });
+          await refresh();
+        } catch (error) {
+          window.alert(`启用失败：${error.message}`);
+        }
+      });
+    }
+    detail.appendChild(row);
+  }
+}
+
 function renderStatus(status) {
   badge.status = status;
   if (!badge.el) return;
@@ -216,15 +293,20 @@ function renderStatus(status) {
     detail.appendChild(clear);
   }
 
+  renderProfiles(status);
+
   const actions = document.createElement("div");
-  actions.style.cssText = "display:flex;gap:6px;justify-content:flex-end;margin-top:8px";
+  actions.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;margin-top:8px";
+  const importButton = document.createElement("button");
+  importButton.textContent = "导入当前画布";
+  importButton.dataset.act = "import";
   const restart = document.createElement("button");
   restart.textContent = "重启";
   restart.dataset.act = "restart";
   const toggle = document.createElement("button");
   toggle.textContent = alive ? "停止" : "启动";
   toggle.dataset.act = "toggle";
-  actions.append(restart, toggle);
+  actions.append(importButton, restart, toggle);
   detail.appendChild(actions);
 }
 

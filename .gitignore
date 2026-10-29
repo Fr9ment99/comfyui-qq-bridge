@@ -1,6 +1,11 @@
 __pycache__/
 *.py[cod]
+.venv/
+.idea/
+.vscode/
+.DS_Store
 qq_bot_config.json
 prompts.json
+workflows/private/
 *.log
 bot.pid

@@ -1,0 +1,309 @@
+{
+  "id": "zimage-inpaint",
+  "label": "Z-Image Turbo 局部重绘（SAM3 文字分割）",
+  "mode": "inpaint",
+  "targets": {
+    "image": [
+      {
+        "node": "125",
+        "input": "image"
+      }
+    ],
+    "region_prompt": [
+      {
+        "node": "86",
+        "input": "prompt"
+      }
+    ],
+    "draw_prompt": [
+      {
+        "node": "77",
+        "input": "text"
+      }
+    ],
+    "seed": [
+      {
+        "node": "79",
+        "input": "seed"
+      },
+      {
+        "node": "105",
+        "input": "seed"
+      }
+    ]
+  },
+  "output": {
+    "node": "82"
+  },
+  "timeout": 300,
+  "workflow": {
+    "72": {
+      "inputs": {
+        "unet_name": "z_image_turbo_fp32-Q4_K_M.gguf"
+      },
+      "class_type": "UnetLoaderGGUF",
+      "_meta": {
+        "title": "Unet Loader (GGUF)"
+      }
+    },
+    "73": {
+      "inputs": {
+        "clip_name": "qwen_3_4b.safetensors",
+        "type": "lumina2",
+        "device": "default"
+      },
+      "class_type": "CLIPLoader",
+      "_meta": {
+        "title": "加载CLIP"
+      }
+    },
+    "74": {
+      "inputs": {
+        "vae_name": "ae.safetensors"
+      },
+      "class_type": "VAELoader",
+      "_meta": {
+        "title": "加载VAE"
+      }
+    },
+    "76": {
+      "inputs": {
+        "shift": 3,
+        "model": [
+          "102",
+          0
+        ]
+      },
+      "class_type": "ModelSamplingAuraFlow",
+      "_meta": {
+        "title": "采样算法（AuraFlow）"
+      }
+    },
+    "77": {
+      "inputs": {
+        "text": "",
+        "clip": [
+          "73",
+          0
+        ]
+      },
+      "class_type": "CLIPTextEncode",
+      "_meta": {
+        "title": "CLIP文本编码"
+      }
+    },
+    "78": {
+      "inputs": {
+        "conditioning": [
+          "77",
+          0
+        ]
+      },
+      "class_type": "ConditioningZeroOut",
+      "_meta": {
+        "title": "条件零化"
+      }
+    },
+    "79": {
+      "inputs": {
+        "seed": 811117657008484,
+        "steps": 9,
+        "cfg": 1,
+        "sampler_name": "euler",
+        "scheduler": "simple",
+        "denoise": 0.6,
+        "model": [
+          "76",
+          0
+        ],
+        "positive": [
+          "77",
+          0
+        ],
+        "negative": [
+          "78",
+          0
+        ],
+        "latent_image": [
+          "80",
+          0
+        ]
+      },
+      "class_type": "KSampler",
+      "_meta": {
+        "title": "K采样器"
+      }
+    },
+    "80": {
+      "inputs": {
+        "grow_mask_by": 8,
+        "pixels": [
+          "86",
+          0
+        ],
+        "vae": [
+          "74",
+          0
+        ],
+        "mask": [
+          "83",
+          0
+        ]
+      },
+      "class_type": "VAEEncodeForInpaint",
+      "_meta": {
+        "title": "VAE编码（局部重绘）"
+      }
+    },
+    "81": {
+      "inputs": {
+        "samples": [
+          "79",
+          0
+        ],
+        "vae": [
+          "74",
+          0
+        ]
+      },
+      "class_type": "VAEDecode",
+      "_meta": {
+        "title": "VAE解码"
+      }
+    },
+    "82": {
+      "inputs": {
+        "filename_prefix": "ComfyUI",
+        "images": [
+          "105",
+          0
+        ]
+      },
+      "class_type": "SaveImage",
+      "_meta": {
+        "title": "保存图像"
+      }
+    },
+    "83": {
+      "inputs": {
+        "amount": 16,
+        "device": "auto",
+        "mask": [
+          "86",
+          1
+        ]
+      },
+      "class_type": "MaskBlur+",
+      "_meta": {
+        "title": "🔧 Mask Blur"
+      }
+    },
+    "86": {
+      "inputs": {
+        "model_name": "sam3",
+        "prompt": "",
+        "output_mode": "Merged",
+        "confidence_threshold": 0.5,
+        "max_segments": 0,
+        "segment_pick": 0,
+        "mask_blur": 0,
+        "mask_offset": 0,
+        "device": "Auto",
+        "invert_output": false,
+        "unload_model": true,
+        "background": "Alpha",
+        "background_color": "#222222",
+        "image": [
+          "125",
+          0
+        ]
+      },
+      "class_type": "SAM3Segment",
+      "_meta": {
+        "title": "SAM3 目标分割 (RMBG)"
+      }
+    },
+    "91": {
+      "inputs": {
+        "images": [
+          "86",
+          2
+        ]
+      },
+      "class_type": "PreviewImage",
+      "_meta": {
+        "title": "预览图像"
+      }
+    },
+    "102": {
+      "inputs": {
+        "lora_name": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors",
+        "strength_model": 0.65,
+        "model": [
+          "72",
+          0
+        ]
+      },
+      "class_type": "LoraLoaderModelOnly",
+      "_meta": {
+        "title": "LoRA加载器（仅模型）"
+      }
+    },
+    "105": {
+      "inputs": {
+        "seed": 981168645704587,
+        "steps": 9,
+        "cfg": 1,
+        "sampler_name": "euler",
+        "scheduler": "simple",
+        "denoise": 0.2,
+        "mode_type": "Linear",
+        "tile_width": 512,
+        "tile_height": 512,
+        "mask_blur": 16,
+        "tile_padding": 32,
+        "seam_fix_mode": "None",
+        "seam_fix_denoise": 0.5,
+        "seam_fix_width": 32,
+        "seam_fix_mask_blur": 8,
+        "seam_fix_padding": 16,
+        "force_uniform_tiles": true,
+        "tiled_decode": false,
+        "batch_size": 1,
+        "upscaled_image": [
+          "81",
+          0
+        ],
+        "model": [
+          "76",
+          0
+        ],
+        "positive": [
+          "77",
+          0
+        ],
+        "negative": [
+          "78",
+          0
+        ],
+        "vae": [
+          "74",
+          0
+        ]
+      },
+      "class_type": "UltimateSDUpscaleNoUpscale",
+      "_meta": {
+        "title": "Ultimate SD Upscale (No Upscale)"
+      }
+    },
+    "125": {
+      "inputs": {
+        "image": "576f70aa1b02ec6111eba26ccaed2934.jpg"
+      },
+      "class_type": "LoadImage",
+      "_meta": {
+        "title": "加载图像"
+      }
+    }
+  }
+}

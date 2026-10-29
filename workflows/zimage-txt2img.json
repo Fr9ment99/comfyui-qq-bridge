@@ -1,0 +1,192 @@
+{
+  "id": "zimage-txt2img",
+  "label": "Z-Image Turbo 文生图",
+  "mode": "txt2img",
+  "targets": {
+    "prompt": [
+      {
+        "node": "6",
+        "input": "text"
+      }
+    ],
+    "seed": [
+      {
+        "node": "3",
+        "input": "seed"
+      }
+    ],
+    "width": [
+      {
+        "node": "13",
+        "input": "width"
+      }
+    ],
+    "height": [
+      {
+        "node": "13",
+        "input": "height"
+      }
+    ]
+  },
+  "output": {
+    "node": "9"
+  },
+  "timeout": 240,
+  "defaults": {
+    "width": 768,
+    "height": 1280
+  },
+  "workflow": {
+    "3": {
+      "inputs": {
+        "seed": 396449910668530,
+        "steps": 9,
+        "cfg": 1,
+        "sampler_name": "euler",
+        "scheduler": "simple",
+        "denoise": 1,
+        "model": [
+          "11",
+          0
+        ],
+        "positive": [
+          "6",
+          0
+        ],
+        "negative": [
+          "28",
+          0
+        ],
+        "latent_image": [
+          "13",
+          0
+        ]
+      },
+      "class_type": "KSampler",
+      "_meta": {
+        "title": "K采样器"
+      }
+    },
+    "6": {
+      "inputs": {
+        "text": "\n",
+        "clip": [
+          "63",
+          0
+        ]
+      },
+      "class_type": "CLIPTextEncode",
+      "_meta": {
+        "title": "CLIP文本编码"
+      }
+    },
+    "8": {
+      "inputs": {
+        "samples": [
+          "3",
+          0
+        ],
+        "vae": [
+          "17",
+          0
+        ]
+      },
+      "class_type": "VAEDecode",
+      "_meta": {
+        "title": "VAE解码"
+      }
+    },
+    "9": {
+      "inputs": {
+        "filename_prefix": "ComfyUI",
+        "images": [
+          "8",
+          0
+        ]
+      },
+      "class_type": "SaveImage",
+      "_meta": {
+        "title": "保存图像"
+      }
+    },
+    "11": {
+      "inputs": {
+        "shift": 3,
+        "model": [
+          "101",
+          0
+        ]
+      },
+      "class_type": "ModelSamplingAuraFlow",
+      "_meta": {
+        "title": "采样算法（AuraFlow）"
+      }
+    },
+    "13": {
+      "inputs": {
+        "width": 768,
+        "height": 1280,
+        "batch_size": 1
+      },
+      "class_type": "EmptySD3LatentImage",
+      "_meta": {
+        "title": "空Latent图像（SD3）"
+      }
+    },
+    "17": {
+      "inputs": {
+        "vae_name": "ae.safetensors"
+      },
+      "class_type": "VAELoader",
+      "_meta": {
+        "title": "加载VAE"
+      }
+    },
+    "28": {
+      "inputs": {
+        "conditioning": [
+          "6",
+          0
+        ]
+      },
+      "class_type": "ConditioningZeroOut",
+      "_meta": {
+        "title": "条件零化"
+      }
+    },
+    "62": {
+      "inputs": {
+        "unet_name": "z_image_turbo_fp32-Q4_K_M.gguf"
+      },
+      "class_type": "UnetLoaderGGUF",
+      "_meta": {
+        "title": "Unet Loader (GGUF)"
+      }
+    },
+    "63": {
+      "inputs": {
+        "clip_name": "qwen_3_4b.safetensors",
+        "type": "lumina2",
+        "device": "default"
+      },
+      "class_type": "CLIPLoader",
+      "_meta": {
+        "title": "加载CLIP"
+      }
+    },
+    "101": {
+      "inputs": {
+        "lora_name": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors",
+        "strength_model": 0.65,
+        "model": [
+          "62",
+          0
+        ]
+      },
+      "class_type": "LoraLoaderModelOnly",
+      "_meta": {
+        "title": "LoRA加载器（仅模型）"
+      }
+    }
+  }
+}

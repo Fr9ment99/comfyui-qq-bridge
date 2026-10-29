@@ -2,5 +2,20 @@
   "appid": "",
   "appsecret": "",
   "openids": [],
-  "workflow": ""
+  "autostart": true,
+  "auto_bind_first_user": true,
+  "comfyui_url": "http://127.0.0.1:8188",
+  "status_port": 8189,
+  "queue_limit": 3,
+  "gen_timeout": 0,
+  "default_width": 1024,
+  "default_height": 1024,
+  "active_profiles": {
+    "txt2img": "zimage-txt2img",
+    "img2img": "zimage-img2img",
+    "inpaint": "zimage-inpaint"
+  },
+  "keyboard_ok": true,
+  "max_image_bytes": 3500000,
+  "language": "zh"
 }

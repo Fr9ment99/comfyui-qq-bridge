@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """QQ 机器人宿主插件。
 
-只负责生命周期：拉起 / 重启 / 停止 qq_comfy_bridge.py 子进程，并把配置和状态
-通过 HTTP 路由暴露给前端设置页。生图逻辑全部留在子进程里。
+只负责生命周期：拉起 / 重启 / 停止 qq_comfy_bridge.py 子进程，并把配置、
+工作流档案和运行状态通过 HTTP 路由暴露给前端设置页。生图逻辑全部留在子进程里。
 """
 
 import asyncio
@@ -13,19 +13,28 @@ import signal
 import subprocess
 import sys
 import threading
-from pathlib import Path
+import time
 
 import aiohttp
 from aiohttp import web
 from server import PromptServer
 
-BASE_DIR = Path(__file__).resolve().parent
-CONFIG_FILE = BASE_DIR / "qq_bot_config.json"
+from .qq_bridge.config import BASE_DIR, DEFAULTS, load_config, save_config
+from .qq_bridge.errors import ProfileError
+from .qq_bridge.profiles import (
+    MODE_LABELS,
+    autodetect,
+    delete_profile,
+    list_profiles,
+    save_profile,
+    validate_against_object_info,
+)
+
 BRIDGE_FILE = BASE_DIR / "qq_comfy_bridge.py"
 WEB_DIRECTORY = "./web"
 __all__ = ["WEB_DIRECTORY"]
 
-STATUS_URL = "http://127.0.0.1:8189/health"
+STATUS_HOST = "127.0.0.1"
 STATUS_APP = "qq-comfy-bridge"
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
@@ -35,22 +44,12 @@ _proc = None
 _routes = PromptServer.instance.routes
 
 
-def load_config():
-    cfg = {"appid": "", "appsecret": "", "openids": [], "workflow": "", "autostart": True}
-    if CONFIG_FILE.exists():
-        try:
-            cfg.update(json.loads(CONFIG_FILE.read_text(encoding="utf-8")))
-        except ValueError as e:
-            LOG.warning("[QQBot] 读取配置失败：%s", e)
-    return cfg
-
-
-def save_config(cfg):
-    CONFIG_FILE.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
 def running():
     return _proc is not None and _proc.poll() is None
+
+
+def status_url(cfg):
+    return f"http://{STATUS_HOST}:{int(cfg.get('status_port') or 8189)}/health"
 
 
 def _pump_output(proc):
@@ -105,9 +104,10 @@ def stop(timeout=5):
 
 
 async def fetch_health(session):
+    cfg = load_config()
     try:
-        async with session.get(STATUS_URL, timeout=aiohttp.ClientTimeout(total=2)) as r:
-            data = await r.json(content_type=None)
+        async with session.get(status_url(cfg), timeout=aiohttp.ClientTimeout(total=2)) as response:
+            data = await response.json(content_type=None)
     except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
         return None
     return data if isinstance(data, dict) and data.get("app") == STATUS_APP else None
@@ -143,6 +143,62 @@ async def restart_bridge():
     start()
 
 
+def _apply_patch(cfg, data):
+    """把前端提交的字段并入配置，返回被改动的字段名。active_profiles 走档案接口。"""
+    changed = set()
+    for key, default in DEFAULTS.items():
+        if key not in data or isinstance(default, dict):
+            continue
+        value = data[key]
+        if isinstance(default, bool):
+            value = bool(value)
+        elif isinstance(default, int):
+            try:
+                value = int(value)
+            except (TypeError, ValueError):
+                continue
+        elif isinstance(default, list):
+            value = [str(item).strip() for item in (value or []) if str(item).strip()]
+        elif isinstance(default, str):
+            value = str(value).strip()
+        else:
+            continue
+        if cfg.get(key) != value:
+            cfg[key] = value
+            changed.add(key)
+    return changed
+
+
+def _all_profiles():
+    try:
+        return list_profiles()
+    except OSError as exc:
+        LOG.warning("[QQBot] 读取档案目录失败：%s", exc)
+        return []
+
+
+def _guess_mode(targets):
+    if "region_prompt" in targets:
+        return "inpaint"
+    if "image" in targets:
+        return "img2img"
+    return "txt2img"
+
+
+async def _object_info_issues(profile):
+    cfg = load_config()
+    url = f"{str(cfg.get('comfyui_url')).rstrip('/')}/object_info"
+    try:
+        async with aiohttp.ClientSession(trust_env=False) as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=20)) as response:
+                if response.status != 200:
+                    return [f"读取 ComfyUI 节点信息失败（HTTP {response.status}）"]
+                info = await response.json(content_type=None)
+    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
+        return [f"没连上 ComfyUI，已跳过节点校验（{exc}）"]
+    return validate_against_object_info(profile, info)
+
+
 @_routes.get("/qq_bridge/status")
 async def qq_bridge_status(request):
     cfg = load_config()
@@ -155,6 +211,10 @@ async def qq_bridge_status(request):
         "appid": cfg.get("appid", ""),
         "openids": cfg.get("openids", []),
         "autostart": bool(cfg.get("autostart", True)),
+        "status_port": cfg.get("status_port"),
+        "comfyui_url": cfg.get("comfyui_url"),
+        "active_profiles": cfg.get("active_profiles") or {},
+        "profiles": _all_profiles(),
         "health": health,
     })
 
@@ -163,13 +223,11 @@ async def qq_bridge_status(request):
 async def qq_bridge_config(request):
     data = await request.json()
     cfg = load_config()
-    for key in ("appid", "appsecret", "workflow"):
-        if key in data:
-            cfg[key] = str(data[key]).strip()
-    if "autostart" in data:
-        cfg["autostart"] = bool(data["autostart"])
-    save_config(cfg)
-    await restart_bridge()
+    changed = _apply_patch(cfg, data)
+    if changed:
+        save_config(cfg)
+        if changed - {"autostart"}:
+            await restart_bridge()
     return web.json_response({"ok": True})
 
 
@@ -198,6 +256,114 @@ async def qq_bridge_stop(request):
 async def qq_bridge_restart(request):
     await restart_bridge()
     return web.json_response({"ok": True})
+
+
+@_routes.post("/qq_bridge/profiles/import")
+async def qq_bridge_profiles_import(request):
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return web.json_response({"ok": False, "error": "请求体不是合法 JSON"}, status=400)
+
+    workflow = data.get("workflow")
+    if not isinstance(workflow, dict) or not workflow:
+        return web.json_response(
+            {"ok": False, "error": "缺少 workflow，请先在 ComfyUI 里打开要导入的工作流"},
+            status=400,
+        )
+
+    warnings = []
+    profile = {"workflow": workflow}
+    for key in ("id", "label", "mode", "targets", "output", "timeout", "defaults"):
+        if data.get(key) not in (None, "", {}, []):
+            profile[key] = data[key]
+
+    if not isinstance(profile.get("targets"), dict) or not profile["targets"]:
+        detected = autodetect(workflow)
+        profile["targets"] = detected["targets"]
+        profile.setdefault("mode", detected["mode"])
+        profile["output"] = profile.get("output") or detected["output"]
+        warnings.extend(detected["warnings"])
+
+    profile.setdefault("mode", _guess_mode(profile["targets"]))
+    profile.setdefault("label", f"{MODE_LABELS.get(profile['mode'], profile['mode'])}画布")
+    profile.setdefault("id", time.strftime("canvas-%Y%m%d-%H%M%S"))
+
+    warnings.extend(await _object_info_issues(profile))
+
+    try:
+        save_profile(profile)
+    except ProfileError as exc:
+        return web.json_response(
+            {"ok": False, "error": str(exc), "warnings": warnings}, status=400
+        )
+
+    cfg = load_config()
+    active = cfg.setdefault("active_profiles", {})
+    activated = False
+    if not (active.get(profile["mode"]) or ""):
+        active[profile["mode"]] = profile["id"]
+        save_config(cfg)
+        activated = True
+
+    if activated:
+        await restart_bridge()
+
+    return web.json_response({
+        "ok": True,
+        "id": profile["id"],
+        "mode": profile["mode"],
+        "label": profile["label"],
+        "activated": activated,
+        "warnings": warnings,
+    })
+
+
+@_routes.post("/qq_bridge/profiles/active")
+async def qq_bridge_profiles_active(request):
+    data = await request.json()
+    mode = str(data.get("mode") or "")
+    profile_id = str(data.get("id") or "")
+    if mode not in MODE_LABELS:
+        return web.json_response({"ok": False, "error": "mode 不合法"}, status=400)
+
+    if profile_id:
+        found = next((item for item in _all_profiles() if item["id"] == profile_id), None)
+        if not found:
+            return web.json_response({"ok": False, "error": f"找不到档案 {profile_id}"}, status=404)
+        if found["mode"] != mode:
+            return web.json_response(
+                {"ok": False, "error": f"档案 {profile_id} 不是{MODE_LABELS[mode]}模式"}, status=400
+            )
+        if not found["valid"]:
+            return web.json_response({"ok": False, "error": found["error"]}, status=400)
+
+    cfg = load_config()
+    cfg.setdefault("active_profiles", {})[mode] = profile_id
+    save_config(cfg)
+    await restart_bridge()
+    return web.json_response({"ok": True, "mode": mode, "id": profile_id})
+
+
+@_routes.post("/qq_bridge/profiles/delete")
+async def qq_bridge_profiles_delete(request):
+    data = await request.json()
+    profile_id = str(data.get("id") or "")
+    if not profile_id:
+        return web.json_response({"ok": False, "error": "缺少 id"}, status=400)
+
+    removed = delete_profile(profile_id)
+    cfg = load_config()
+    active = cfg.setdefault("active_profiles", {})
+    touched = False
+    for mode, current in list(active.items()):
+        if current == profile_id:
+            active[mode] = ""
+            touched = True
+    if touched:
+        save_config(cfg)
+        await restart_bridge()
+    return web.json_response({"ok": True, "removed": removed})
 
 
 async def _on_startup(app):
