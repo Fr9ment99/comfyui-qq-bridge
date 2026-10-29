@@ -1,8 +1,14 @@
 # comfyui-qq-bridge
 
-用 QQ 单聊遥控本地 ComfyUI。手机上发一句话、发一张图，PC 上的工作流出图后自动回传。
+用 QQ 单聊遥控本地 ComfyUI：在校园网这类受限网络下，把本地部署的生图模型接到手机上用。
 
-插件本身**不带模型**，只做三件事：接收 QQ 消息、把内容注入你指定的 API 工作流、把结果发回去。要跑什么模型、什么采样器，由你导入的工作流档案决定（仓库只附带几份示例）。
+插件本身**不带模型、不带工作流**，只做三件事：接收 QQ 消息、把内容注入指定的 API 工作流、把结果发送到手机上的 QQ。
+
+用哪个模型、什么采样器，由你导入的工作流档案决定。
+
+## 背景
+
+做这个插件的起因很具体：校园网这类受限网络里，手机上直接访问本地部署的 ComfyUI 很不方便。与其把模型搬到云端，不如让 QQ 机器人当中间人——你在手机上发消息，PC 上的本地工作流出图后回传，模型和数据都留在自己机器上。
 
 ## 适用范围
 
@@ -32,6 +38,33 @@
 
 依赖只有 `aiohttp` 和 `Pillow`，ComfyUI 自带，一般不用额外安装。
 
+## 示例环境（作者的测试配置）
+
+仓库附带的三份示例档案就是在下面这套环境里跑通的，仅供参考，不是插件的硬性要求。
+
+测试机：Windows + 秋叶整合包（ComfyUI-aki-v3.2）。
+
+模型文件：
+
+| 文件 | 放置位置 | 用途 |
+| --- | --- | --- |
+| `z_image_turbo_fp32-Q4_K_M.gguf` | `models/unet/` | 主模型，Z-Image Turbo 的 GGUF 量化版（约 4.6GB） |
+| `qwen_3_4b.safetensors` | `models/clip/` | 文本编码器，示例里 `CLIPLoader` 的 `type` 选 `lumina2` |
+| `ae.safetensors` | `models/vae/` | VAE |
+| `Z-Image-Turbo-Fun-Controlnet-Union.safetensors` | `models/loras/` | 示例档案里的 LoRA（强度 0.65），可删 |
+| `sam3.safetensors` | `models/sam3/` | 局部重绘的文字分割模型 |
+
+自定义节点：
+
+| 插件 | 用到的节点 | 什么时候需要 |
+| --- | --- | --- |
+| [ComfyUI-GGUF](https://github.com/city96/ComfyUI-GGUF) | `UnetLoaderGGUF` | 三份示例都要 |
+| [ComfyUI-RMBG](https://github.com/1038lab/ComfyUI-RMBG) | `SAM3Segment` | 只有局部重绘示例要 |
+| [ComfyUI_UltimateSDUpscale](https://github.com/ssitu/ComfyUI_UltimateSDUpscale) | `UltimateSDUpscaleNoUpscale` | 只有局部重绘示例要 |
+| [ComfyUI_essentials](https://github.com/cubiq/ComfyUI_essentials) | `MaskBlur+` | 只有局部重绘示例要 |
+
+换模型或换 LoRA 时，改示例档案里 `unet_name` / `lora_name` 这类字面量即可，不用改插件代码。
+
 ## 工作流档案
 
 「档案」是一份 **API 格式**的 ComfyUI 工作流 + 一张「角色 → 节点输入」的映射表，保存在 `workflows/*.json`。
@@ -55,7 +88,7 @@
 
 同一个模式可以有多份档案，但必须指定当前使用哪一份（`active_profiles`）。只有一个候选时会自动选中。
 
-仓库里的 `workflows/zimage-*.json` 是作者的示例（Z-Image Turbo 系列），依赖 `UnetLoaderGGUF`（ComfyUI-GGUF）和局部重绘用到的 SAM3 分割节点；缺少对应自定义节点时会在徽标里标红，按需删改或换成自己的。
+仓库里的 `workflows/zimage-*.json` 是作者的示例（Z-Image Turbo 系列），依赖的模型文件与自定义节点见上一节；缺少对应节点时会在徽标里标红，按需删改或换成自己的。
 
 不方便用徽标时，也可以复制 `qq_bot_config.example.json` 为 `qq_bot_config.json` 手动填写，再重启 ComfyUI。
 
