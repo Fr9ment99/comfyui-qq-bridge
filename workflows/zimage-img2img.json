@@ -1,6 +1,6 @@
 {
   "id": "zimage-img2img",
-  "label": "Z-Image Turbo 图生图 + 提示词反推",
+  "label": "Z-Image Turbo 图生图",
   "mode": "img2img",
   "targets": {
     "image": [

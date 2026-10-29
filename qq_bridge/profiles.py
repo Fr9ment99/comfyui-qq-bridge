@@ -401,22 +401,6 @@ def autodetect(workflow):
     }
 
 
-def _has_caption_source(workflow, targets):
-    """图生图需要有一个把图片转成文字的节点（Florence2 / JoyCaption 之类）。"""
-    keywords = ("florence", "caption", "blip", "wd14", "janus")
-    for node in workflow.values():
-        cls = str(node.get("class_type") or "").lower()
-        if any(word in cls for word in keywords):
-            return True
-    # 提示词的字面量输入被别的节点连线喂入，也说明文本来自某个输出节点
-    for item in targets.get("prompt") or []:
-        node = workflow.get(str(item.get("node"))) or {}
-        for value in (node.get("inputs") or {}).values():
-            if isinstance(value, list) and len(value) == 2 and str(value[0]) in workflow:
-                return True
-    return False
-
-
 def check_workflow(mode, workflow):
     """导入前的节点体检，返回 (问题列表, 自动识别结果)。问题为空表示可以存成档案。"""
     detected = autodetect(workflow)
@@ -434,8 +418,6 @@ def check_workflow(mode, workflow):
     elif mode == "img2img":
         if not targets.get("image"):
             issues.append("没有找到图片输入节点：需要一个 LoadImage")
-        if not _has_caption_source(workflow, targets):
-            issues.append("没有找到文本输出节点：需要一个反推节点（如 Florence2Run）")
         if not detected["output"]:
             issues.append("没有找到图片输出节点：需要一个 SaveImage")
     elif mode == "inpaint":

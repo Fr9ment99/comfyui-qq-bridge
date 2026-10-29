@@ -5,7 +5,8 @@
 - 按钮菜单固定四项：文生图 / 图生图 / 局部重绘 / 再来一张
 - 未选模式时，用户发什么都只回菜单
 - 模式一次性有效，出图后清空并再次弹出菜单
-- 生成期间不发 ack，结果图 + 菜单共消耗 2 次被动回复额度
+- 局部重绘分两步：先收图片，再收「遮罩目标；重绘内容」
+- 入队成功回一条 ack，结果图 + 菜单共消耗 3 次被动回复额度（上限 4）
 """
 
 import asyncio
@@ -31,6 +32,7 @@ from .workflow import build_prompt, output_node_of
 
 INTENTS = (1 << 25) | (1 << 26)  # 单聊消息 + 互动事件
 MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+PENDING_IMAGE_TTL = 900  # 局部重绘第一张图的等待时间（秒）
 STATUS_APP = "qq-comfy-bridge"
 
 
@@ -92,6 +94,7 @@ class QQBot:
         self.started_at = time.time()
         self.last_error = ""
         self.last_image_at = 0
+        self.pending_images = {}
 
     # ------------------------------------------------------------------
     # 状态
@@ -135,7 +138,14 @@ class QQBot:
     def authorized(self, openid):
         allowed = self.cfg.setdefault("openids", [])
         if allowed:
-            return openid in allowed
+            if openid in allowed:
+                return True
+            log(
+                f"未授权账号 {openid[:8]}… 发来消息，已忽略。"
+                f"如果这是你本人，请在徽标里「清空白名单」后再发一条消息。",
+                "WARN",
+            )
+            return False
         if self.cfg.get("auto_bind_first_user", True):
             allowed.append(openid)
             try:
@@ -256,6 +266,27 @@ class QQBot:
     # 路由
     # ------------------------------------------------------------------
 
+    def remember_image(self, openid, data):
+        """局部重绘第一步收到的原图，等第二步的提示词组。"""
+        self.pending_images[openid] = (bytes(data), time.time())
+        if len(self.pending_images) > 200:
+            self.pending_images.pop(next(iter(self.pending_images)))
+
+    def take_image(self, openid):
+        item = self.pending_images.pop(openid, None)
+        if not item:
+            return None
+        data, saved_at = item
+        return data if time.time() - saved_at < PENDING_IMAGE_TTL else None
+
+    async def run_inpaint(self, openid, reply, image, region, draw, explicit):
+        hint = "" if explicit else "提示：用「遮罩目标；重绘内容」可以分别指定分割目标和重绘内容"
+        await self.enqueue(
+            openid, reply, "inpaint",
+            {"image": image, "region_prompt": region, "draw_prompt": draw},
+            hint=hint,
+        )
+
     async def route(self, openid, reply, content, images):
         text = (content or "").strip()
         if text.startswith("/"):
@@ -292,24 +323,26 @@ class QQBot:
             )
 
         elif mode == "inpaint":
-            if not images:
-                await self.reply_text(
-                    openid, reply, "请发送原图，并附：区域 | 重绘内容。"
-                )
+            if images:
+                if text:
+                    region, draw, explicit = menu.split_region(text)
+                    if region:
+                        await self.run_inpaint(openid, reply, images[0], region, draw, explicit)
+                        return
+                self.remember_image(openid, images[0])
+                await self.reply_text(openid, reply, menu.inpaint_prompt(have_image=True))
+                return
+
+            image = self.take_image(openid)
+            if not image:
+                await self.reply_text(openid, reply, menu.inpaint_prompt())
                 return
             region, draw, explicit = menu.split_region(text)
             if not region:
-                await self.reply_text(
-                    openid, reply,
-                    "请补一句描述：区域 | 重绘内容，例如「猫 | 一只穿西装的橘猫」。",
-                )
+                self.remember_image(openid, image)
+                await self.reply_text(openid, reply, menu.inpaint_prompt(have_image=True))
                 return
-            hint = "" if explicit else "提示：用「区域 | 内容」可以分别指定分割目标和重绘内容"
-            await self.enqueue(
-                openid, reply, "inpaint",
-                {"image": images[0], "region_prompt": region, "draw_prompt": draw},
-                hint=hint,
-            )
+            await self.run_inpaint(openid, reply, image, region, draw, explicit)
 
     async def handle_command(self, openid, reply, text, images):
         command, _, rest = text.partition(" ")
@@ -324,7 +357,7 @@ class QQBot:
             if not mode:
                 await self.reply_text(
                     openid, reply,
-                    "用法：/mode txt2img | img2img | inpaint\n也可以直接点菜单按钮。",
+                    "用法：/mode txt2img、img2img、inpaint\n也可以直接点菜单按钮。",
                 )
                 return
             await self.select_mode(openid, reply, mode)
@@ -423,7 +456,7 @@ class QQBot:
         if not region:
             await self.reply_text(
                 openid, reply,
-                "用法：/redraw 区域 | 重绘内容\n也可以先发送图片，再发这句。",
+                "用法：/redraw 遮罩目标；重绘内容\n遮罩目标用英文，例如：/redraw legs；改成白色过膝袜",
             )
             return
 
@@ -436,12 +469,7 @@ class QQBot:
             await self.reply_text(openid, reply, "请先发送原图，或者先出过一张图。")
             return
 
-        hint = "" if explicit else "提示：用「区域 | 内容」可以分别指定分割目标和重绘内容"
-        await self.enqueue(
-            openid, reply, "inpaint",
-            {"image": image, "region_prompt": region, "draw_prompt": draw},
-            hint=hint,
-        )
+        await self.run_inpaint(openid, reply, image, region, draw, explicit)
 
     async def list_profiles(self, openid, reply):
         profiles = list_profiles()
@@ -543,7 +571,12 @@ class QQBot:
         }
         self.store.clear_mode(openid)
         await self.queue.put(job)
+        waiting = self.queue.qsize() - 1
         log(f"任务入队：mode={mode} profile={profile.get('id')} seed={seed} 队列={self.queue.qsize()}")
+        ack = f"已收到，正在生成。seed {seed}"
+        if waiting > 0:
+            ack += f"\n前面还有 {waiting} 个任务，请稍等。"
+        await self.reply_text(openid, reply, ack)
 
     async def worker(self):
         while True:

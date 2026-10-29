@@ -51,7 +51,7 @@ def markdown_menu(hint="", active_line=""):
     lines.append("")
     lines.append("文生图：发送文字")
     lines.append("图生图：发送图片，可附一句描述")
-    lines.append("局部重绘：发送图片，并附「区域 | 重绘内容」")
+    lines.append("局部重绘：先发图片，再发「遮罩目标；重绘内容」")
     lines.append("再来一张：复用上一次的参数")
     if active_line:
         lines.append("")
@@ -67,7 +67,7 @@ def text_menu(hint="", active_line=""):
         lines.append(hint)
     lines.append("1. 文生图")
     lines.append("2. 图生图")
-    lines.append("3. 局部重绘")
+    lines.append("3. 局部重绘（先发图片，再发提示词组）")
     lines.append("4. 再来一张")
     if active_line:
         lines.append("")
@@ -84,18 +84,27 @@ def mode_prompt(mode, profile_label=""):
     if mode == "img2img":
         return "已选择「图生图」。请发送图片，可附一句描述。" + suffix
     if mode == "inpaint":
-        return (
-            "已选择「局部重绘」。请发送图片，并附：区域 | 重绘内容\n"
-            "例如：猫 | 一只穿西装的橘猫"
-            + suffix
-        )
+        return inpaint_prompt() + suffix
     return "未知模式"
 
 
+def inpaint_prompt(have_image=False):
+    first = "① 图片已收到" if have_image else "① 先发送一张图片"
+    return "\n".join([
+        "局部重绘分两步：",
+        first,
+        "② 再发送「遮罩目标；重绘内容」",
+        "",
+        "例如：legs；把腿改成白色过膝袜",
+        "遮罩目标必须用英文（SAM3 只识别英文），重绘内容中英文都可以。",
+    ])
+
+
 def split_region(text):
-    """把「猫 | 一只狗」拆成 (分割目标, 重绘内容, 是否显式指定)。"""
+    """把「legs；改成白色过膝袜」拆成 (遮罩目标, 重绘内容, 是否显式指定)。"""
     text = (text or "").strip()
-    if "|" in text:
-        region, draw = text.split("|", 1)
-        return region.strip(), draw.strip(), True
+    for separator in ("；", ";", "|"):
+        if separator in text:
+            region, draw = text.split(separator, 1)
+            return region.strip(), draw.strip(), True
     return text, text, False
