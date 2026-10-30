@@ -1,5 +1,7 @@
 # comfyui-qq-bridge
 
+**中文** | [English](README_EN.md)
+
 在校园网环境限制下，一种在移动设备上使用本地部署的生图模型的解决方案。
 
 用 QQ bot 单聊遥控本地 ComfyUI。
